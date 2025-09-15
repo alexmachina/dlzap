@@ -11,7 +11,7 @@ brew install yt-dlp ffmpeg
 
 2. Install dlzap:
 ```bash
-curl -o /usr/local/bin/dlzap https://raw.githubusercontent.com/yourusername/dlzap/main/dlzap
+curl -o /usr/local/bin/dlzap https://raw.githubusercontent.com/alexmachina/dlzap/main/dlzap
 chmod +x /usr/local/bin/dlzap
 ```
 
