@@ -1,0 +1,96 @@
+#!/bin/bash
+# dlzap - Download video from clipboard and convert for WhatsApp
+# Implementation per docs/requirements.md
+
+set -e  # Exit on any error
+
+# Environment variables
+DLZAP_DOWNLOAD_DIR="${DLZAP_DOWNLOAD_DIR:-$HOME/Downloads/dlzap}"
+
+# Sanitize filename for filesystem
+sanitize_filename() {
+    local filename="$1"
+    # Replace problematic characters with underscore per requirements.md section 2
+    echo "$filename" | sed 's/[<>:"|?*\/]/_/g'
+}
+
+# Get video title from yt-dlp
+get_video_title() {
+    local url="$1"
+    local title
+    
+    # Use yt-dlp to get title, suppress other output
+    title=$(yt-dlp --get-title "$url" 2>/dev/null)
+    
+    if [[ -z "$title" ]]; then
+        # Fallback to timestamp per requirements.md section 2
+        title="video_$(date +%Y%m%d_%H%M%S)"
+    fi
+    
+    sanitize_filename "$title"
+}
+
+# Main function
+main() {
+    # Get URL from clipboard per requirements.md section 8
+    local url
+    url=$(pbpaste)
+    
+    # Basic validation - ensure clipboard not empty
+    if [[ -z "$url" ]]; then
+        echo "error: no URL found in clipboard" >&2
+        exit 1
+    fi
+    
+    # Create download directory if it doesn't exist per requirements.md section 7
+    mkdir -p "$DLZAP_DOWNLOAD_DIR"
+    
+    # Get video title for filename per requirements.md section 2
+    echo "downloading $url..."
+    local title
+    title=$(get_video_title "$url")
+    
+    local output_file="$DLZAP_DOWNLOAD_DIR/${title}.mp4"
+    
+    # Check if file already exists per requirements.md section 3
+    if [[ -f "$output_file" ]]; then
+        echo "File already exists: ${title}.mp4. Skipping download."
+        echo "done! $title copied to clipboard."
+        osascript -e 'tell application "Finder" to set the clipboard to (POSIX file "'"$output_file"'")'
+        exit 0
+    fi
+    
+    # Download video with yt-dlp, silence stdout per requirements.md section 4
+    local temp_download="$DLZAP_DOWNLOAD_DIR/${title}_temp.%(ext)s"
+    yt-dlp -o "$temp_download" "$url" >/dev/null 2>&1
+    
+    # Find the downloaded file (yt-dlp determines extension)
+    local downloaded_file
+    downloaded_file=$(find "$DLZAP_DOWNLOAD_DIR" -name "${title}_temp.*" | head -1)
+    
+    if [[ ! -f "$downloaded_file" ]]; then
+        echo "error downloading video: download failed" >&2
+        exit 1
+    fi
+    
+    # Convert to WhatsApp format per requirements.md section 1
+    echo "converting $title..."
+    
+    # FFmpeg command per requirements.md section 1
+    ffmpeg -i "$downloaded_file" \
+           -c:v libx264 \
+           -c:a aac \
+           -vf "scale=1280:720:force_original_aspect_ratio=decrease:force_divisible_by=2" \
+           -movflags +faststart \
+           "$output_file" >/dev/null 2>&1
+    
+    # Clean up temporary file per requirements.md section 7
+    rm -f "$downloaded_file"
+    
+    # Copy to clipboard and show completion per requirements.md section 4
+    echo "done! $title copied to clipboard."
+    osascript -e 'tell application "Finder" to set the clipboard to (POSIX file "'"$output_file"'")'
+}
+
+# Run main function
+main "$@"
